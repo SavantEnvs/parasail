@@ -1,0 +1,32 @@
+project: savantenvs/parasail
+target: parasail-aligner
+
+# Per-target starter seeds (canonical two-entry form: server tar + local dir).
+testsuite:
+  - https://$MAYHEM_DOMAIN/$MAYHEM_PROJECT/$MAYHEM_TARGET/testsuite.tar
+  - file://mayhem/parasail-aligner/testsuite
+
+cmds:
+  # The whole image (incl. /tmp) is READ-ONLY during coverage collection; only /dev/shm is
+  # writable. So the input is staged there (filepath) and the -g CSV output goes there too —
+  # an unwritable output path made the aligner exit(EXIT_FAILURE) before reading any input
+  # ("Cannot open output file `/tmp/parasail.csv': Read-only file system" -> 0 edges).
+  #
+  # A SECOND, deeper cause of the instant 0-edge "Run Failed": the aligner auto-detects piped
+  # input with poll(POLLIN) on stdin (stdin_has_data()). Under Mayhem, stdin is /dev/null, which
+  # polls READABLE, so with -f set it mis-treated stdin as an (empty) QUERY file and exited
+  # EXIT_FAILURE ("no alignment work") BEFORE reading @@ — every testcase, no phase. Fixed in the
+  # binary: mayhem/aligner_stdin_guard.c closes fd 0 before main() (linked into parasail_aligner
+  # only), so stdin_has_data() returns false and the aligner uses ONLY this -f @@ input.
+  - cmd: /mayhem/parasail_aligner -f @@ -g /dev/shm/parasail.csv
+    filepath: /dev/shm/in.fasta
+    env:
+      # Mayhem's mayhem-fuzz deferred fork-server start FAILS on this sanitizer CLI: run #8's
+      # event log ended "subprocess (/opt/forallsecure/fuzz/mayhem-fuzz) entered a restart loop
+      # ... terminated with return code 254 ... Error running your target ... try setting or
+      # increasing MFUZZ_COMPAT_LEVEL". Smoke-testing SUCCEEDED (the binary runs the seed fine);
+      # it is only the fuzz fork-server that this binary can't do. Level 1 disables ONLY the
+      # deferred fork-server start while KEEPING the fork server that amortises ASan startup —
+      # the same fix my_basic uses. (Level 2 disables the fork server entirely -> throughput too
+      # low -> 0 edges; level 0/unset -> the restart loop above.)
+      MFUZZ_COMPAT_LEVEL: "1"

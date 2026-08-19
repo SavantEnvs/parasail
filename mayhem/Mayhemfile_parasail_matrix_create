@@ -1,0 +1,6 @@
+project: savantenvs/parasail
+target: parasail-matrix-create
+
+cmds:
+  - cmd: /mayhem/fuzz_parasail_matrix_create
+    libfuzzer: true
